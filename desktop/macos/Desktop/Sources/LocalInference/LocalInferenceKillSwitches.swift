@@ -52,9 +52,12 @@ struct LocalInferenceKillSwitches: Sendable, Equatable {
     environment: [String: String] = ProcessInfo.processInfo.environment,
     defaults: UserDefaults = .standard
   ) -> URL {
+    // Falls back to the Local chat provider's server (Settings → AI Provider → Local), so one
+    // Ollama / LM Studio configuration serves chat and conversation summaries.
     let raw =
       trimmed(environment[Self.serverURLEnvironmentKey])
       ?? trimmed(defaults.string(forKey: Self.serverURLDefaultsKey))
+      ?? trimmed(defaults.string(forKey: AIProvider.localBaseURLKey))
     if let raw, let parsed = URL(string: raw) {
       return parsed
     }
@@ -77,6 +80,7 @@ struct LocalInferenceKillSwitches: Sendable, Equatable {
   ) -> String {
     trimmed(environment[Self.modelEnvironmentKey])
       ?? trimmed(defaults.string(forKey: Self.modelDefaultsKey))
+      ?? trimmed(defaults.string(forKey: AIProvider.localModelIDKey))
       ?? "local"
   }
 

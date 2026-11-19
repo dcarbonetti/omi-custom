@@ -310,4 +310,77 @@ final class STTSessionStateTests: XCTestCase {
         wakeWordNeedsRecognizableName: true, preferLocalOnBasic: true),
       .cloud)
   }
+
+  // MARK: - Strict on-device transcription (Local-first)
+
+  func testStrictLocal_bleDeviceAndWakeWord_stayLocal() {
+    let session = STTSessionState()
+    let mode = session.resolveMode(
+      audioSource: .bleDevice,
+      isAppleSilicon: true,
+      debugForceCloud: true,
+      wakeWordNeedsRecognizableName: true,
+      preferLocalOnBasic: false,
+      language: .english,
+      strictLocal: true
+    )
+    XCTAssertEqual(mode, .local)
+  }
+
+  func testStrictLocal_blocksLocalToCloudFallback() {
+    var session = STTSessionState()
+    session.beginRecording(
+      audioSource: .microphone,
+      isAppleSilicon: true,
+      debugForceCloud: false,
+      strictLocal: true
+    )
+    XCTAssertEqual(session.activeMode, .local)
+    XCTAssertTrue(session.strictLocal)
+    XCTAssertFalse(session.canBeginLocalToCloudFallback(isTranscribing: true))
+  }
+
+  func testNonStrict_stillAllowsLocalToCloudFallback() {
+    var session = STTSessionState()
+    session.beginRecording(audioSource: .microphone, isAppleSilicon: true, debugForceCloud: false)
+    XCTAssertFalse(session.strictLocal)
+    XCTAssertTrue(session.canBeginLocalToCloudFallback(isTranscribing: true))
+  }
+
+  func testStrictLocalBlockReason() {
+    XCTAssertNil(STTSessionState.strictLocalBlockReason(isAppleSilicon: true, language: .english))
+    XCTAssertNotNil(STTSessionState.strictLocalBlockReason(isAppleSilicon: false, language: .english))
+    let uncovered = STTLanguageCapability.Selection(effective: "zh", primary: "zh")
+    if !uncovered.isCoveredOnDevice {
+      XCTAssertNotNil(STTSessionState.strictLocalBlockReason(isAppleSilicon: true, language: uncovered))
+    }
+  }
+
+  func testLocalFirstSettings_transcriptionRoute_defaultsLocal_envWins() {
+    let defaults = UserDefaults(suiteName: "LocalFirstSettingsTests-\(UUID().uuidString)")!
+    XCTAssertEqual(LocalFirstSettings.transcriptionRoute(environment: [:], defaults: defaults), .local)
+    LocalFirstSettings.setTranscriptionRoute(.omi, defaults: defaults)
+    XCTAssertEqual(LocalFirstSettings.transcriptionRoute(environment: [:], defaults: defaults), .omi)
+    XCTAssertEqual(
+      LocalFirstSettings.transcriptionRoute(
+        environment: [LocalFirstSettings.transcriptionRouteEnvironmentKey: "local"], defaults: defaults),
+      .local)
+  }
+
+  func testLocalFirstSettings_shareUsageData_defaultsOff() {
+    let defaults = UserDefaults(suiteName: "LocalFirstSettingsTests-\(UUID().uuidString)")!
+    XCTAssertFalse(LocalFirstSettings.shareUsageData(environment: [:], defaults: defaults))
+    LocalFirstSettings.setShareUsageData(true, defaults: defaults)
+    XCTAssertTrue(LocalFirstSettings.shareUsageData(environment: [:], defaults: defaults))
+    XCTAssertFalse(
+      LocalFirstSettings.shareUsageData(
+        environment: [LocalFirstSettings.shareUsageDataEnvironmentKey: "0"], defaults: defaults))
+  }
+
+  func testLocalFirstSettings_backendIsLocal() {
+    XCTAssertTrue(LocalFirstSettings.backendIsLocal(baseURL: "http://127.0.0.1:8080"))
+    XCTAssertTrue(LocalFirstSettings.backendIsLocal(baseURL: "http://localhost:10201/"))
+    XCTAssertFalse(LocalFirstSettings.backendIsLocal(baseURL: "https://api.omi.me"))
+    XCTAssertFalse(LocalFirstSettings.backendIsLocal(baseURL: nil))
+  }
 }

@@ -174,7 +174,13 @@ struct AIProvider: Identifiable {
   /// (they already send this content server-side unconditionally) and false
   /// under Local until the explicit opt-in.
   static var localCloudAssistEnabled: Bool {
-    isLocalProviderActive && localCloudAssistMode == .cloud
+    backgroundAIStaysLocal && localCloudAssistMode == .cloud
+  }
+
+  /// Local chat provider active, or Settings → Local-first → Summaries & memories is "On this
+  /// Mac". Either keeps the cloud-assisted features fail-closed until the user opts in.
+  static var backgroundAIStaysLocal: Bool {
+    isLocalProviderActive || LocalFirstSettings.backgroundAIStaysLocal()
   }
 
   /// True when the Local provider is active *and* the user has not opted
@@ -186,7 +192,7 @@ struct AIProvider: Identifiable {
   /// AppState+TrialPaywall's screen-capture exemption/popup gate) share one
   /// definition, so a future change to the condition lands in one place.
   static var isLocalProviderFailingClosed: Bool {
-    isLocalProviderActive && !localCloudAssistEnabled
+    backgroundAIStaysLocal && !localCloudAssistEnabled
   }
 
   /// Whether a connector-synthesis call site (Apple Notes, Calendar, Gmail
@@ -197,7 +203,7 @@ struct AIProvider: Identifiable {
   /// call sites (AppleNotesReaderService, CalendarReaderService,
   /// GmailReaderService, AIUserProfileService) read naturally at the call site.
   static func shouldSkipConnectorSynthesis() -> Bool {
-    isLocalProviderActive && !localCloudAssistEnabled
+    backgroundAIStaysLocal && !localCloudAssistEnabled
   }
 
   /// Default local endpoint: localhost, matching LM Studio's default port.

@@ -360,10 +360,15 @@ actor ConversationFinalizationService {
     uploadSegments: [APIClient.UploadSegment],
     startedAt: Date
   ) async -> Data? {
-    let flagEnabled = localProjectionHooks?.flagEnabled ?? FreeTierLocalProcessingFlag.isEnabled()
+    // Local-first: "Summaries & memories → On this Mac" always produces the on-device projection,
+    // whatever the plan's funding state. Test hooks keep precedence.
+    let forceLocal = localProjectionHooks == nil && LocalFirstSettings.configuredProcessingRoute() == .local
+    let flagEnabled = localProjectionHooks?.flagEnabled ?? (forceLocal || FreeTierLocalProcessingFlag.isEnabled())
     let entitlement: SubscriptionEntitlementDecision
     if let pinned = localProjectionHooks?.entitlement {
       entitlement = pinned
+    } else if forceLocal {
+      entitlement = .planGated
     } else {
       let subscription = await SubscriptionEntitlementService.shared.snapshot()
       entitlement =

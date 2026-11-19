@@ -2171,8 +2171,10 @@ class PushToTalkManager: ObservableObject {
   /// kernel context. Capture starts in either case; only an exact binding earns
   /// direct ingress, otherwise the controller buffers through its one handoff.
   private func startRealtimePTTRoute(startMicrophoneCapture: Bool) {
+    // Strict on-device transcription takes the offline route: the turn is decoded on this Mac and
+    // never reaches the cloud realtime hub, Omni STT or Deepgram.
     let decision = PTTRoutePolicy.decide(
-      isOnline: NetworkReachability.shared.isOnline,
+      isOnline: NetworkReachability.shared.isOnline && !LocalFirstSettings.isStrictLocalTranscription(),
       admitsImmediately: RealtimeHubController.shared.pttAdmission == .immediate)
     switch decision {
     case .onDeviceDictation:

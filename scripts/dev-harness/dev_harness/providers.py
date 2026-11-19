@@ -40,6 +40,17 @@ _PROVIDER_SECRET_NAMES = (
 )
 
 
+# Local-AI mode (scripts/local-first/run-local.sh): every LLM lane is served by one
+# OpenAI-compatible server on this machine (Ollama, LM Studio). No cloud provider key is
+# required or passed to child processes; see backend/llm_gateway/gateway/local_mode.py.
+LOCAL_AI_BASE_URL_ENV = "OMI_LOCAL_LLM_BASE_URL"
+
+
+def local_ai_enabled(env: Mapping[str, str] | None = None) -> bool:
+    source = os.environ if env is None else env
+    return bool(source.get(LOCAL_AI_BASE_URL_ENV, "").strip())
+
+
 class ProviderPolicyError(safety.SafetyError):
     """Raised when provider mode or provider request policy fails closed."""
 
@@ -351,6 +362,13 @@ def provider_preflight(
         )
 
     enabled: list[str] = []
+    if local_ai_enabled(source):
+        # Cloud LLM/STT providers are not used: keep only keyless local specs.
+        provider_specs = tuple(spec for spec in provider_specs if spec.credential_env is None)
+        warnings.append(
+            f"{LOCAL_AI_BASE_URL_ENV} set: local-AI mode, cloud provider keys are neither required nor passed on"
+        )
+        enabled.append("local-llm")
     for spec in provider_specs:
         spec.budget.validate_bounded()
         if not spec.pricing_bounded:

@@ -401,8 +401,14 @@ def child_env_for(cfg: HarnessConfig) -> dict[str, str]:
         "PYTHONUNBUFFERED": "1",
         "OMI_ENV_STAGE": "offline" if cfg.provider_mode == "offline" else "local",
     }
-    if cfg.provider_mode != "offline":
+    if cfg.provider_mode != "offline" and not providers.local_ai_enabled():
         extra.update(provider_secrets_from_file(cfg))
+    if providers.local_ai_enabled():
+        # Keyless STT chain; the desktop transcribes on-device and uploads segments. Placeholder
+        # (non-working) keys let backend modules import; every LLM call goes through the gateway,
+        # which local-AI mode points at the local server.
+        extra["STT_SERVICE_MODELS"] = "parakeet"
+        extra.update(safety.offline_provider_placeholders())
     env = safety.build_child_env(provider_mode=cfg.provider_mode, extra=extra)
     if cfg.provider_mode == "offline":
         env.update(safety.offline_provider_placeholders())
@@ -425,8 +431,14 @@ def desktop_backend_child_env_for(cfg: HarnessConfig) -> dict[str, str]:
         "USE_VERTEX_AI": "false",
         "OMI_ENV_STAGE": "offline" if cfg.provider_mode == "offline" else "local",
     }
-    if cfg.provider_mode != "offline":
+    if cfg.provider_mode != "offline" and not providers.local_ai_enabled():
         extra.update(provider_secrets_from_file(cfg))
+    if providers.local_ai_enabled():
+        # Keyless STT chain; the desktop transcribes on-device and uploads segments. Placeholder
+        # (non-working) keys let backend modules import; every LLM call goes through the gateway,
+        # which local-AI mode points at the local server.
+        extra["STT_SERVICE_MODELS"] = "parakeet"
+        extra.update(safety.offline_provider_placeholders())
     env = safety.build_child_env(provider_mode=cfg.provider_mode, extra=extra)
     if cfg.provider_mode == "offline":
         env.update(safety.offline_provider_placeholders())

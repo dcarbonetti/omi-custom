@@ -147,3 +147,34 @@ def test_llm_gateway_port_override_is_isolated_from_shared_default() -> None:
     assert cfg.llm_gateway_url == "http://127.0.0.1:19080"
     assert cfg.llm_gateway_service_token.endswith(":qa-offset")
     assert config.child_env_for(cfg)["OMI_LLM_GATEWAY_URL"] == "http://127.0.0.1:19080"
+
+
+def test_child_env_for_local_ai_mode_passes_no_cloud_keys(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("OMI_LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("OMI_LOCAL_LLM_MODEL", "qwen3:8b")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-real-key-must-not-pass")
+    cfg = config.HarnessConfig(
+        repo_root=REPO_ROOT,
+        instance="default",
+        provider_mode="real",
+        layout=safety.layout_for_instance(REPO_ROOT, "default"),
+    )
+    for child in (config.child_env_for(cfg), config.desktop_backend_child_env_for(cfg)):
+        assert child["OMI_LOCAL_LLM_BASE_URL"] == "http://127.0.0.1:11434/v1"
+        assert child["OMI_LOCAL_LLM_MODEL"] == "qwen3:8b"
+        assert child["STT_SERVICE_MODELS"] == "parakeet"
+        assert child["OPENAI_API_KEY"] == safety.offline_provider_placeholders()["OPENAI_API_KEY"]
+    assert config.child_env_for(cfg)["OMI_LLM_GATEWAY_FEATURE_MODE"] == "gateway"
+
+
+def test_local_ai_preflight_requires_no_cloud_keys(monkeypatch) -> None:
+    from dev_harness import providers
+
+    env = {"PROVIDER_MODE": "real", "OMI_LOCAL_LLM_BASE_URL": "http://127.0.0.1:11434/v1"}
+    report = providers.provider_preflight(REPO_ROOT, env=env)
+    assert report.ok, report.missing
+    assert "local-llm" in report.enabled_external_providers
+    assert not {"openai", "deepgram", "gemini", "anthropic"} & set(report.enabled_external_providers)
+
+    cloud = providers.provider_preflight(REPO_ROOT, env={"PROVIDER_MODE": "real"})
+    assert not cloud.ok

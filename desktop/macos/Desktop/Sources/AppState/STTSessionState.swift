@@ -27,6 +27,9 @@ struct STTSessionState: Equatable {
   var activeMode: ResolvedMode?
   /// Language of the running recording; gates the cloud→local fallback.
   private(set) var activeLanguage: STTLanguageCapability.Selection = .english
+  /// Transcription is routed "On this Mac" (`LocalFirstSettings`): the recording runs on-device
+  /// and never falls back to a cloud STT socket, whatever the source, plan or wake-word setting.
+  private(set) var strictLocal = false
 
   var useLocalSTT: Bool { activeMode?.usesLocalSTT ?? false }
 
@@ -71,8 +74,12 @@ struct STTSessionState: Equatable {
     debugForceCloud: Bool,
     wakeWordNeedsRecognizableName: Bool = false,
     preferLocalOnBasic: Bool = false,
-    language: STTLanguageCapability.Selection = .english
+    language: STTLanguageCapability.Selection = .english,
+    strictLocal: Bool = false
   ) -> ResolvedMode {
+    // Callers check `strictLocalBlockReason` first, so a strict recording only starts where the
+    // on-device model can actually serve it.
+    if strictLocal { return .local }
     let forceCloud =
       !sessionForceLocal && (debugForceCloud || appRunForceCloud || wakeWordNeedsRecognizableName)
     if !isAppleSilicon || forceCloud || !language.isCoveredOnDevice {
@@ -90,17 +97,36 @@ struct STTSessionState: Equatable {
     debugForceCloud: Bool,
     wakeWordNeedsRecognizableName: Bool = false,
     preferLocalOnBasic: Bool = false,
-    language: STTLanguageCapability.Selection = .english
+    language: STTLanguageCapability.Selection = .english,
+    strictLocal: Bool = false
   ) {
     activeLanguage = language
+    self.strictLocal = strictLocal
     activeMode = resolveMode(
       audioSource: audioSource,
       isAppleSilicon: isAppleSilicon,
       debugForceCloud: debugForceCloud,
       wakeWordNeedsRecognizableName: wakeWordNeedsRecognizableName,
       preferLocalOnBasic: preferLocalOnBasic,
-      language: language
+      language: language,
+      strictLocal: strictLocal
     )
+  }
+
+  /// Why a strict on-device recording cannot start, or `nil` when it can. Strict mode refuses
+  /// rather than sending audio to the cloud.
+  static func strictLocalBlockReason(
+    isAppleSilicon: Bool,
+    language: STTLanguageCapability.Selection
+  ) -> String? {
+    if !isAppleSilicon {
+      return "On-device transcription needs an Apple Silicon Mac."
+    }
+    if !language.isCoveredOnDevice {
+      return
+        "The selected transcription language isn't supported on-device. Choose a supported language, or set Transcription to Omi Cloud in Settings → Local-first."
+    }
+    return nil
   }
 
   mutating func endRecording() {
@@ -108,7 +134,7 @@ struct STTSessionState: Equatable {
   }
 
   func canBeginLocalToCloudFallback(isTranscribing: Bool) -> Bool {
-    isTranscribing && useLocalSTT && !fallbackInProgress
+    isTranscribing && useLocalSTT && !strictLocal && !fallbackInProgress
   }
 
   mutating func beginLocalToCloudFallback() {

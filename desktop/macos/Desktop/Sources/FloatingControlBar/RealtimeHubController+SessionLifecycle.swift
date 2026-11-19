@@ -15,6 +15,12 @@ extension RealtimeHubController {
   /// Automatic keep-warm (idle remint, reconnect, presence return, launch) must
   /// not mint a managed session when the entitlement decision is `.planGated`.
   func ensureWarm(userInitiated: Bool = false) {
+    // Strict on-device transcription (Settings → Local-first): the realtime hub streams voice to a
+    // cloud model, so it never opens. Push-to-talk uses on-device dictation instead.
+    guard !LocalFirstSettings.isStrictLocalTranscription() else {
+      log("RealtimeHub: not warming — transcription is set to On this Mac")
+      return
+    }
     guard admitWarmRequest(userInitiated: userInitiated) else { return }
     let skipAutomatic = shouldSkipAutomaticManagedWarm()
     if !userInitiated, skipAutomatic {

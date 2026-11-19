@@ -313,3 +313,4 @@ pnpm-workspace.yaml
 !.agent-artifacts/ui-evidence/
 .agent-artifacts/ui-evidence/*
 !.agent-artifacts/ui-evidence/lane-web-batch/
+scripts/local-first/omi-local.env
