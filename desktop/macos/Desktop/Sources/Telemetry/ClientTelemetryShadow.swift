@@ -261,6 +261,8 @@ enum ClientTelemetryShadow {
       recorder(observation)
       return
     }
+    // Local-first: remote client telemetry is opt-in (Settings → Local-first → Share usage data).
+    guard LocalFirstSettings.shareUsageData() else { return }
     Task { await ClientTelemetryTransport.shared.enqueue(observation) }
   }
 

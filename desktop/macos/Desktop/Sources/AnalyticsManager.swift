@@ -194,7 +194,32 @@ class AnalyticsManager {
       log("Analytics: Skipping initialization (development build)")
       return
     }
+    // Local-first: product analytics and session replay are opt-in.
+    guard LocalFirstSettings.shareUsageData() else {
+      log("Analytics: Skipping initialization (usage data sharing is off)")
+      return
+    }
     PostHogManager.shared.initialize()
+  }
+
+  /// Apply a change to Settings → Local-first → Share usage data without a relaunch.
+  func applyUsageDataPreference() {
+    if LocalFirstSettings.shareUsageData() {
+      initialize()
+      PostHogManager.shared.optIn()
+      identify()
+    } else {
+      // PostHog's opt-out persists and stops capture, replay and flag calls for this install.
+      PostHogManager.shared.optOut()
+      PostHogManager.shared.reset()
+      // Drop telemetry still queued for upload, for every account on this Mac.
+      Task {
+        if let owner = RuntimeOwnerIdentity.currentOwnerId() {
+          await ClientTelemetryTransport.shared.purgeOwner(owner)
+        }
+        await ClientTelemetryTransport.shared.purgeOwnersExceptCurrent()
+      }
+    }
   }
 
   // MARK: - User Identification

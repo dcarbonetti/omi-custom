@@ -11,6 +11,9 @@ import SwiftUI
 
 @MainActor
 extension AppState {
+  /// One alert per app run when strict on-device transcription cannot start.
+  static var didShowStrictLocalBlockAlert = false
+
   func toggleTranscription() {
     if isTranscribing {
       AssistantSettings.shared.audioRecordingMode = .off
@@ -75,8 +78,13 @@ extension AppState {
 
     // Paywall hard-stop: every code path that enables the mic + WS streaming
     // funnels through here, including auto-restart from sleep and toggle
-    // shortcuts. Refuse to start and surface the upgrade popup.
-    if blockIfPaywalled() { return }
+    // shortcuts. Refuse to start and surface the upgrade popup, unless
+    // transcription itself is exempt (BYOK), blockIfPaywalled already
+    // checks that exemption itself, and unconditionally, so it also clears a
+    // stale isPaywalled flag for a BYOK user instead of leaving it set.
+    // Explicit "transcription" reason (not the default "trial_expired") so
+    // the central choke point applies this gate's own exemption.
+    if blockIfPaywalled(reason: "transcription") { return }
 
     // Use provided source or fall back to current setting
     let effectiveSource = source ?? audioSource
@@ -134,10 +142,33 @@ extension AppState {
       // Intel Macs and languages no on-device model covers use the cloud path. Force cloud for debugging
       // with OMI_FORCE_CLOUD_STT=1 or `defaults write <bundle> forceCloudSTT -bool true`. Identified basic
       // BLE matches mic (local, unnamed); cache miss / unknown plan fail open to BLE→cloud.
-      let debugForceCloud = STTSessionState.debugForceCloudSTT(
-        environmentForceCloud: ProcessInfo.processInfo.environment["OMI_FORCE_CLOUD_STT"] == "1",
-        userDefaultsForceCloud: UserDefaults.standard.bool(forKey: "forceCloudSTT")
-      )
+      // Local-first routing (Settings → Local-first → Transcription). "On this Mac" is strict: no
+      // cloud socket, no fallback. "Omi Cloud" / "My own cloud account" use the cloud path; the
+      // latter carries the user's Deepgram key (`X-BYOK-Deepgram`) when one is saved.
+      let transcriptionRoute = LocalFirstSettings.configuredTranscriptionRoute()
+      let strictLocal = transcriptionRoute == .local
+      if strictLocal,
+        let blocked = STTSessionState.strictLocalBlockReason(
+          isAppleSilicon: Self.isAppleSilicon, language: languageSelection)
+      {
+        log("Transcription: strict on-device mode cannot start — \(blocked)")
+        if !Self.didShowStrictLocalBlockAlert {
+          Self.didShowStrictLocalBlockAlert = true
+          showAlert(title: "On-device transcription unavailable", message: blocked)
+        }
+        return
+      }
+      // A cloud route forces the cloud path. With no route configured (unit tests only) the
+      // upstream automatic choice and its OMI_FORCE_CLOUD_STT / forceCloudSTT switches apply.
+      let debugForceCloud: Bool
+      if let transcriptionRoute {
+        debugForceCloud = transcriptionRoute != .local
+      } else {
+        debugForceCloud = STTSessionState.debugForceCloudSTT(
+          environmentForceCloud: ProcessInfo.processInfo.environment["OMI_FORCE_CLOUD_STT"] == "1",
+          userDefaultsForceCloud: UserDefaults.standard.bool(forKey: "forceCloudSTT")
+        )
+      }
       let preferLocalOnBasic =
         SubscriptionEntitlementService.shared.cachedDecisionForManagedProactivity() == .planGated
       Task { _ = await SubscriptionEntitlementService.shared.snapshot() }
@@ -147,7 +178,8 @@ extension AppState {
         debugForceCloud: debugForceCloud,
         wakeWordNeedsRecognizableName: AssistantSettings.shared.wakeWordNeedsRecognizableName,
         preferLocalOnBasic: preferLocalOnBasic,
-        language: languageSelection
+        language: languageSelection,
+        strictLocal: strictLocal
       )
       let clientConversationId = UUID().uuidString.lowercased()
       currentClientConversationId = sttSession.useLocalSTT ? nil : clientConversationId
@@ -995,6 +1027,19 @@ extension AppState {
   /// broken model on every recording.
   @MainActor
   func handleLocalSTTModelLoadFailure() {
+    if sttSession.strictLocal && isTranscribing {
+      // Strict on-device: never fall back to cloud STT. Stop and say so instead of recording
+      // into a void or silently sending audio off the Mac.
+      log("Transcription: Parakeet model load failed in strict on-device mode — stopping (no cloud fallback)")
+      captureAttempt?.noteErrorTerminal()
+      stopTranscription(finalizationReason: .sttFallback)
+      showAlert(
+        title: "On-device transcription couldn't start",
+        message:
+          "The on-device speech model failed to download or load. Check your connection for the one-time model download (about 600 MB) and try again. Audio was not sent to the cloud."
+      )
+      return
+    }
     guard sttSession.canBeginLocalToCloudFallback(isTranscribing: isTranscribing) else { return }
     sttSession.beginLocalToCloudFallback()
     log("Transcription: Parakeet model load failed — falling back to cloud STT")

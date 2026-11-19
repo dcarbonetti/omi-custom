@@ -117,8 +117,11 @@ class OpenAICompatibleChatCompletionProvider:
         base_url: str | None = None,
         default_headers: Mapping[str, str] | None = None,
         http_client: httpx.AsyncClient | None = None,
+        static_api_key: str | None = None,
     ) -> None:
         self._api_key_env = api_key_env
+        # Local-AI mode: one fixed key for a self-hosted server; forwarded BYOK keys are ignored.
+        self._static_api_key = static_api_key
         self._base_url = (base_url or os.getenv(OPENAI_BASE_URL_ENV_VAR, DEFAULT_OPENAI_BASE_URL)).rstrip('/')
         self._default_headers = dict(default_headers or {})
         self._http_client = http_client or httpx.AsyncClient()
@@ -134,7 +137,7 @@ class OpenAICompatibleChatCompletionProvider:
     ) -> ProviderResponse:
         cache_policy = request.get(INTERNAL_POLICY, {})
         request = provider_cache_request(request, owner=cache_owner_scope(credentials.caller))
-        api_key = _resolve_provider_api_key(
+        api_key = self._static_api_key or _resolve_provider_api_key(
             credentials=credentials,
             provider_ref=provider_ref,
             api_key_env=self._api_key_env,
@@ -198,7 +201,7 @@ class OpenAICompatibleChatCompletionProvider:
     ):
         cache_policy = request.get(INTERNAL_POLICY, {})
         request = provider_cache_request(request, owner=cache_owner_scope(credentials.caller))
-        api_key = _resolve_provider_api_key(
+        api_key = self._static_api_key or _resolve_provider_api_key(
             credentials=credentials,
             provider_ref=provider_ref,
             api_key_env=self._api_key_env,
@@ -261,7 +264,7 @@ class OpenAICompatibleChatCompletionProvider:
         credentials: CredentialContext,
         timeout_ms: int,
     ) -> ProviderResponse:
-        api_key = _resolve_provider_api_key(
+        api_key = self._static_api_key or _resolve_provider_api_key(
             credentials=credentials,
             provider_ref=provider_ref,
             api_key_env=self._api_key_env,
@@ -327,7 +330,7 @@ class OpenAICompatibleChatCompletionProvider:
         The answer body is typed (``answers.<name>.noul`` / ``choice`` /
         ``score``); only its shape is checked here. Callers interpret it.
         """
-        api_key = _resolve_provider_api_key(
+        api_key = self._static_api_key or _resolve_provider_api_key(
             credentials=credentials,
             provider_ref=provider_ref,
             api_key_env=self._api_key_env,
