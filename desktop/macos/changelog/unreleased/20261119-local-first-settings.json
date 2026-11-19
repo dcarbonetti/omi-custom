@@ -1,0 +1,3 @@
+{
+  "change": "Added a Local-first settings page that chooses, per feature, whether transcription and conversation summaries run on this Mac, on Omi Cloud, or on your own cloud account, keeps on-device transcription from ever falling back to the cloud, and makes usage analytics opt-in"
+}

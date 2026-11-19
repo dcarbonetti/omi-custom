@@ -34,6 +34,7 @@ final class PermissionsPagePresentationTests: XCTestCase {
         .general,
         .account,
         .transcription,
+        .localFirst,
         .rewind,
         .floatingBar,
         .notifications,

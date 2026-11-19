@@ -1,0 +1,3 @@
+{
+  "change": "Added Google Drive backup that copies your conversations, memories and tasks as Markdown and JSON into an Omi Backup folder in your own Drive every 30 minutes"
+}

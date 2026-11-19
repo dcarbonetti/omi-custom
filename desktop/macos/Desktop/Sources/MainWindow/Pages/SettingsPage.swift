@@ -459,6 +459,8 @@ struct SettingsContentView: View {
     case general = "General"
     case rewind = "Rewind"
     case transcription = "Transcription"
+    /// Where each AI feature runs, usage-data sharing and Google Drive backup.
+    case localFirst = "Local-first"
     case notifications = "Notifications"
     case privacy = "Privacy"
     case account = "Account"
@@ -692,6 +694,8 @@ struct SettingsContentView: View {
           rewindSection
         case .transcription:
           transcriptionSection
+        case .localFirst:
+          LocalFirstSettingsView()
         case .notifications, .privacy:
           notificationsSection
           mergedSectionHeader(title: "Privacy", icon: "lock.shield")

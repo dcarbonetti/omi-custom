@@ -1036,7 +1036,8 @@ extension AppState {
       showAlert(
         title: "On-device transcription couldn't start",
         message:
-          "The on-device speech model failed to download or load. Check your connection for the one-time model download (about 600 MB) and try again. Audio was not sent to the cloud."
+          "The on-device speech model failed to download or load. Check your connection for the one-time "
+          + "model download (about 600 MB) and try again. Audio was not sent to the cloud."
       )
       return
     }

@@ -422,8 +422,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
       Task { @MainActor in await AuthService.shared.configure() }
     }
 
-    // Initialize analytics (PostHog)
+    // Initialize analytics (PostHog) — opt-in only (Settings → Local-first → Share usage data)
     AnalyticsManager.shared.initialize()
+    // Google Drive backup: periodic, only while enabled and signed in to Google.
+    GoogleDriveSyncService.shared.start()
     AnalyticsManager.shared.detectAndReportCrash()
     AnalyticsManager.shared.recoverMonitoringSessionIfNeeded()
     if let attempt = pendingUpdateRelaunch?.attempt {

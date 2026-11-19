@@ -124,7 +124,8 @@ struct STTSessionState: Equatable {
     }
     if !language.isCoveredOnDevice {
       return
-        "The selected transcription language isn't supported on-device. Choose a supported language, or set Transcription to Omi Cloud in Settings → Local-first."
+        "The selected transcription language isn't supported on-device. Choose a supported language, "
+        + "or set Transcription to Omi Cloud in Settings → Local-first."
     }
     return nil
   }

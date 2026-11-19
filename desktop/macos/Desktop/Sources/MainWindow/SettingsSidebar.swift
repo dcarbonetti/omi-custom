@@ -392,6 +392,7 @@ enum SettingsSidebarRoutes {
     .general,
     .account,
     .transcription,
+    .localFirst,
     .rewind,
     .floatingBar,
     .notifications,
@@ -571,6 +572,7 @@ struct SettingsSidebarItem: View {
     case .general: return "gearshape"
     case .rewind: return "clock.arrow.circlepath"
     case .transcription: return "waveform"
+    case .localFirst: return "lock.laptopcomputer"
     case .notifications: return "bell"
     case .privacy: return "lock.shield"
     case .account: return "person.circle"
