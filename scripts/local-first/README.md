@@ -48,6 +48,38 @@ The model needs tool calling and JSON-schema output. `qwen3:8b` suits 16 GB. On 
 a 14B–32B instruct model gives better summaries. Avoid "thinking" variants here: they are much slower.
 LM Studio works too (Developer tab → Start server, base URL `http://127.0.0.1:1234/v1`).
 
+### Or: use your Claude subscription instead of a local model
+
+No API key needed. If you have Claude Pro or Max and Claude Code installed, the backend can run its AI
+work through `claude -p` on your Mac. Sign in once:
+
+```bash
+claude
+```
+
+Inside Claude Code, run `/login` and choose your **Claude subscription** (not an API key). Then set this in
+`scripts/local-first/omi-local.env`:
+
+```
+OMI_LOCAL_LLM_BACKEND=claude-cli
+OMI_CLAUDE_MODEL=sonnet     # or haiku (faster, lighter on usage limits), or opus
+```
+
+`omi-local up` makes one tiny test call to confirm the sign-in. Then every summary, memory and
+action-item request runs as an isolated `claude -p` process
+(`backend/llm_gateway/gateway/claude_cli_provider.py`). Each process has:
+
+- no tools, no MCP servers and no saved session;
+- `--safe-mode`, so your own CLAUDE.md, hooks and plugins don't load;
+- `ANTHROPIC_API_KEY` removed, so your subscription is what pays.
+
+Tool-calling and image lanes fail closed. `omi-local app` sets AI Provider → **Claude**, which uses the
+same subscription for chat. Click *Connect* there once if asked.
+
+**Trade-off:** this is your "own cloud account" option, not on-device. Conversation text goes to
+Anthropic under your account, and it counts toward your plan's usage limits. Heavy recording days can
+reach them. Transcription stays on the Mac either way.
+
 ## 3. Start the local stack
 
 From the repository root:

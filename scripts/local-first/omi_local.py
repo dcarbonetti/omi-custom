@@ -13,8 +13,10 @@ from __future__ import annotations
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -48,7 +50,45 @@ def _http_json(url: str, payload: dict | None = None, timeout: float = 10.0) -> 
             return exc.code, {"raw": body.decode(errors="replace")}
 
 
+def _uses_claude_cli() -> bool:
+    return os.environ.get("OMI_LOCAL_LLM_BACKEND", "").strip().lower() == "claude-cli"
+
+
+def check_claude_cli() -> int:
+    """One tiny `claude -p` call, run exactly the way the gateway runs it."""
+
+    binary = os.environ.get("OMI_CLAUDE_CLI_PATH") or shutil.which("claude")
+    if not binary:
+        print("`claude` is not on PATH. Install Claude Code (https://claude.com/claude-code), then run `claude` once")
+        print("and sign in with your Claude subscription (/login).")
+        return 1
+    model = os.environ.get("OMI_LOCAL_LLM_MODEL") or "sonnet"
+    env = {k: v for k, v in os.environ.items() if k not in {"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"}}
+    args = [binary, "-p", "--output-format", "json", "--model", model, "--tools", "", "--strict-mcp-config",
+            "--safe-mode", "--no-session-persistence", "--disable-slash-commands"]
+    with tempfile.TemporaryDirectory(prefix="omi-claude-check-") as workdir:
+        try:
+            done = subprocess.run(args, input="Reply with the single word OK.", capture_output=True, text=True,
+                                  cwd=workdir, env=env, timeout=120)
+        except subprocess.TimeoutExpired:
+            print("`claude -p` did not answer within 2 minutes.")
+            return 1
+    try:
+        payload = json.loads(done.stdout or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    if payload.get("type") == "result" and not payload.get("is_error"):
+        served = ", ".join(payload.get("modelUsage", {})) or model
+        print(f"Claude Code CLI OK ({binary}, model {served}). AI lanes will use your Claude subscription.")
+        return 0
+    print("`claude -p` failed: " + str(payload.get("result") or done.stderr.strip() or "no output"))
+    print("Run `claude` in a terminal and sign in with /login (choose your Claude subscription, not an API key).")
+    return 1
+
+
 def check_llm() -> int:
+    if _uses_claude_cli():
+        return check_claude_cli()
     base = os.environ.get("OMI_LOCAL_LLM_BASE_URL", "").rstrip("/")
     model = os.environ.get("OMI_LOCAL_LLM_MODEL", "")
     if not base or not model:
@@ -108,9 +148,10 @@ def _seed_defaults(bundle_id: str) -> None:
     base = os.environ.get("OMI_LOCAL_LLM_BASE_URL", "")
     model = os.environ.get("OMI_LOCAL_LLM_MODEL", "")
     seeds = {
-        "chatBridgeMode": "local",  # AI Provider → Local
-        "localLLMBaseURL": base,
-        "localLLMModelID": model,
+        # AI Provider → Local (your model), or Claude (your subscription) with the claude-cli backend.
+        "chatBridgeMode": "claudeCode" if _uses_claude_cli() else "local",
+        "localLLMBaseURL": "" if _uses_claude_cli() else base,
+        "localLLMModelID": "" if _uses_claude_cli() else model,
         "localFirst_transcriptionRoute": "local",
         "localFirst_processingRoute": "local",
     }

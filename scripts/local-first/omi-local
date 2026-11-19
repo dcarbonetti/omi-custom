@@ -30,7 +30,15 @@ set +a
 # gateway serves every lane from OMI_LOCAL_LLM_BASE_URL (backend/llm_gateway/gateway/local_mode.py).
 export PROVIDER_MODE=real
 export OMI_ENV_STAGE=local
-export OMI_LOCAL_STATE_ROOT OMI_LOCAL_INSTANCE OMI_LOCAL_LLM_BASE_URL OMI_LOCAL_LLM_MODEL
+export OMI_LOCAL_LLM_BACKEND="${OMI_LOCAL_LLM_BACKEND:-openai}"
+if [ "$OMI_LOCAL_LLM_BACKEND" = "claude-cli" ]; then
+  # The gateway runs `claude -p` with your subscription; no local model server is used.
+  unset OMI_LOCAL_LLM_BASE_URL
+  export OMI_LOCAL_LLM_MODEL="${OMI_CLAUDE_MODEL:-sonnet}"
+else
+  export OMI_LOCAL_LLM_BASE_URL
+fi
+export OMI_LOCAL_STATE_ROOT OMI_LOCAL_INSTANCE OMI_LOCAL_LLM_MODEL
 export OMI_LOCAL_EMBEDDING_MODEL="${OMI_LOCAL_EMBEDDING_MODEL:-}"
 mkdir -p "$OMI_LOCAL_STATE_ROOT"
 chmod 700 "$OMI_LOCAL_STATE_ROOT" 2>/dev/null || true

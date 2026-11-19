@@ -44,11 +44,15 @@ _PROVIDER_SECRET_NAMES = (
 # OpenAI-compatible server on this machine (Ollama, LM Studio). No cloud provider key is
 # required or passed to child processes; see backend/llm_gateway/gateway/local_mode.py.
 LOCAL_AI_BASE_URL_ENV = "OMI_LOCAL_LLM_BASE_URL"
+# `claude-cli`: the Claude Code CLI signed in to the owner's subscription serves the lanes.
+LOCAL_AI_BACKEND_ENV = "OMI_LOCAL_LLM_BACKEND"
 
 
 def local_ai_enabled(env: Mapping[str, str] | None = None) -> bool:
     source = os.environ if env is None else env
-    return bool(source.get(LOCAL_AI_BASE_URL_ENV, "").strip())
+    return bool(source.get(LOCAL_AI_BASE_URL_ENV, "").strip()) or (
+        source.get(LOCAL_AI_BACKEND_ENV, "").strip().lower() == "claude-cli"
+    )
 
 
 class ProviderPolicyError(safety.SafetyError):
@@ -366,7 +370,7 @@ def provider_preflight(
         # Cloud LLM/STT providers are not used: keep only keyless local specs.
         provider_specs = tuple(spec for spec in provider_specs if spec.credential_env is None)
         warnings.append(
-            f"{LOCAL_AI_BASE_URL_ENV} set: local-AI mode, cloud provider keys are neither required nor passed on"
+            "self-hosted AI mode: cloud provider keys are neither required nor passed on"
         )
         enabled.append("local-llm")
     for spec in provider_specs:

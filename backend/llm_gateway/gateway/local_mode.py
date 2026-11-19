@@ -1,8 +1,15 @@
-"""Local-AI mode: serve every gateway lane from one OpenAI-compatible server on this machine.
+"""Self-hosted AI mode: serve every gateway lane from one model the stack's owner controls.
 
-Enabled by ``OMI_LOCAL_LLM_BASE_URL`` (for example ``http://127.0.0.1:11434/v1`` for Ollama or
-``http://127.0.0.1:1234/v1`` for LM Studio) together with ``OMI_LOCAL_LLM_MODEL``. Used by
-``scripts/local-first/run-local.sh`` for a self-hosted desktop stack.
+Two backends (``OMI_LOCAL_LLM_BACKEND``):
+
+- ``openai`` (default): an OpenAI-compatible server on this machine, ``OMI_LOCAL_LLM_BASE_URL``
+  (``http://127.0.0.1:11434/v1`` for Ollama, ``http://127.0.0.1:1234/v1`` for LM Studio) with
+  ``OMI_LOCAL_LLM_MODEL``. Nothing leaves the machine.
+- ``claude-cli``: the Claude Code CLI (``claude -p``) signed in to the owner's Claude
+  subscription, ``OMI_LOCAL_LLM_MODEL`` a CLI model alias (default ``sonnet``). Content goes to
+  Anthropic under the owner's account; see ``claude_cli_provider.py``.
+
+Used by ``scripts/local-first/omi-local`` for a self-hosted desktop stack.
 
 Coverage is the point. The rewrite happens after the whole config is loaded, so every route
 artifact is covered: generated ``omi:auto:*`` lanes, explicit lanes, desktop Vertex lanes and
@@ -30,6 +37,13 @@ LOCAL_EMBEDDING_MODEL_ENV_VAR = 'OMI_LOCAL_EMBEDDING_MODEL'
 LOCAL_LLM_API_KEY_ENV_VAR = 'OMI_LOCAL_LLM_API_KEY'
 LOCAL_LLM_TIMEOUT_MS_ENV_VAR = 'OMI_LOCAL_LLM_TIMEOUT_MS'
 LOCAL_LLM_ALLOW_REMOTE_ENV_VAR = 'OMI_LOCAL_LLM_ALLOW_REMOTE'
+LOCAL_LLM_BACKEND_ENV_VAR = 'OMI_LOCAL_LLM_BACKEND'
+
+BACKEND_OPENAI = 'openai'
+BACKEND_CLAUDE_CLI = 'claude-cli'
+BACKENDS = frozenset({BACKEND_OPENAI, BACKEND_CLAUDE_CLI})
+CLAUDE_CLI_PROVIDER = 'claude-cli'
+DEFAULT_CLAUDE_CLI_MODEL = 'sonnet'
 
 LOCAL_PROVIDER = 'local'
 # Never registered: a lane pointed here fails closed instead of reaching a cloud provider.
@@ -50,6 +64,11 @@ class LocalLLMSettings:
     embedding_model: str | None
     api_key: str
     timeout_ms: int
+    backend: str = BACKEND_OPENAI
+
+    @property
+    def provider_name(self) -> str:
+        return CLAUDE_CLI_PROVIDER if self.backend == BACKEND_CLAUDE_CLI else LOCAL_PROVIDER
 
 
 def _is_loopback(host: str) -> bool:
@@ -65,8 +84,24 @@ def local_llm_settings(env: dict[str, str] | None = None) -> LocalLLMSettings | 
     """The configured local server, or ``None`` when local-AI mode is off."""
 
     source = os.environ if env is None else env
+    backend = source.get(LOCAL_LLM_BACKEND_ENV_VAR, '').strip().lower() or BACKEND_OPENAI
+    if backend not in BACKENDS:
+        raise LocalModeConfigError(f'{LOCAL_LLM_BACKEND_ENV_VAR} must be one of {sorted(BACKENDS)}, got {backend!r}')
+    timeout_ms = _timeout_ms(source)
+    if backend == BACKEND_CLAUDE_CLI:
+        return LocalLLMSettings(
+            base_url='',
+            model=source.get(LOCAL_LLM_MODEL_ENV_VAR, '').strip() or DEFAULT_CLAUDE_CLI_MODEL,
+            # The CLI has no embeddings endpoint: those lanes fail closed.
+            embedding_model=None,
+            api_key='',
+            timeout_ms=timeout_ms,
+            backend=BACKEND_CLAUDE_CLI,
+        )
     base_url = source.get(LOCAL_LLM_BASE_URL_ENV_VAR, '').strip().rstrip('/')
     if not base_url:
+        if source.get(LOCAL_LLM_BACKEND_ENV_VAR, '').strip():
+            raise LocalModeConfigError(f'{LOCAL_LLM_BACKEND_ENV_VAR}=openai needs {LOCAL_LLM_BASE_URL_ENV_VAR}')
         return None
     model = source.get(LOCAL_LLM_MODEL_ENV_VAR, '').strip()
     if not model:
@@ -80,13 +115,6 @@ def local_llm_settings(env: dict[str, str] | None = None) -> LocalLLMSettings | 
             f'{LOCAL_LLM_BASE_URL_ENV_VAR} must point at this machine (loopback); '
             f'set {LOCAL_LLM_ALLOW_REMOTE_ENV_VAR}=true for a server on your own network'
         )
-    raw_timeout = source.get(LOCAL_LLM_TIMEOUT_MS_ENV_VAR, '').strip()
-    try:
-        timeout_ms = int(raw_timeout) if raw_timeout else DEFAULT_LOCAL_LLM_TIMEOUT_MS
-    except ValueError as exc:
-        raise LocalModeConfigError(f'{LOCAL_LLM_TIMEOUT_MS_ENV_VAR} must be an integer') from exc
-    if timeout_ms <= 0:
-        raise LocalModeConfigError(f'{LOCAL_LLM_TIMEOUT_MS_ENV_VAR} must be positive')
     return LocalLLMSettings(
         base_url=base_url,
         model=model,
@@ -94,6 +122,17 @@ def local_llm_settings(env: dict[str, str] | None = None) -> LocalLLMSettings | 
         api_key=source.get(LOCAL_LLM_API_KEY_ENV_VAR, '').strip() or DEFAULT_LOCAL_LLM_API_KEY,
         timeout_ms=timeout_ms,
     )
+
+
+def _timeout_ms(source) -> int:
+    raw_timeout = source.get(LOCAL_LLM_TIMEOUT_MS_ENV_VAR, '').strip()
+    try:
+        timeout_ms = int(raw_timeout) if raw_timeout else DEFAULT_LOCAL_LLM_TIMEOUT_MS
+    except ValueError as exc:
+        raise LocalModeConfigError(f'{LOCAL_LLM_TIMEOUT_MS_ENV_VAR} must be an integer') from exc
+    if timeout_ms <= 0:
+        raise LocalModeConfigError(f'{LOCAL_LLM_TIMEOUT_MS_ENV_VAR} must be positive')
+    return timeout_ms
 
 
 # Providers that are search products, not language models. A local chat model asked to stand in
@@ -106,9 +145,9 @@ def _local_primary(artifact: RouteArtifact, settings: LocalLLMSettings) -> Provi
     if artifact.primary.provider in SEARCH_PRODUCT_PROVIDERS:
         return ProviderRef(provider=LOCAL_DISABLED_PROVIDER, model=artifact.primary.model)
     if artifact.surface == Surface.OPENAI_CHAT_COMPLETIONS:
-        return ProviderRef(provider=LOCAL_PROVIDER, model=settings.model)
+        return ProviderRef(provider=settings.provider_name, model=settings.model)
     if artifact.surface == Surface.OPENAI_EMBEDDINGS and settings.embedding_model:
-        return ProviderRef(provider=LOCAL_PROVIDER, model=settings.embedding_model)
+        return ProviderRef(provider=settings.provider_name, model=settings.embedding_model)
     return ProviderRef(provider=LOCAL_DISABLED_PROVIDER, model=artifact.primary.model)
 
 

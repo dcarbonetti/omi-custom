@@ -4,7 +4,14 @@ from functools import lru_cache
 
 from llm_gateway.gateway.config_loader import GatewayConfig, load_gateway_config
 from llm_gateway.gateway.executor import ProviderRegistry
-from llm_gateway.gateway.local_mode import LOCAL_PROVIDER, apply_local_llm_mode, local_llm_settings
+from llm_gateway.gateway.claude_cli_provider import ClaudeCodeCLIProvider
+from llm_gateway.gateway.local_mode import (
+    BACKEND_CLAUDE_CLI,
+    CLAUDE_CLI_PROVIDER,
+    LOCAL_PROVIDER,
+    apply_local_llm_mode,
+    local_llm_settings,
+)
 from llm_gateway.gateway.providers import (
     AnthropicMessagesProvider,
     OpenAICompatibleChatCompletionProvider,
@@ -21,6 +28,9 @@ def get_gateway_config() -> GatewayConfig:
 @lru_cache(maxsize=1)
 def get_provider_registry() -> ProviderRegistry:
     local = local_llm_settings()
+    if local is not None and local.backend == BACKEND_CLAUDE_CLI:
+        # Only the Claude Code CLI (the owner's subscription) is registered.
+        return ProviderRegistry({CLAUDE_CLI_PROVIDER: ClaudeCodeCLIProvider()})
     if local is not None:
         # Only the local server is registered: a lane that still names a cloud provider has
         # nothing to dispatch to and fails closed.
