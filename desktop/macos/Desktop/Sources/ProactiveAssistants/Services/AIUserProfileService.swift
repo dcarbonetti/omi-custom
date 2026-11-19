@@ -33,6 +33,9 @@ enum AIUserProfileRefreshError: LocalizedError, Equatable {
   case synthesisFailed
   case rateLimited
   case unavailable
+  /// Local AI provider with Cloud-assisted features off: profile synthesis would send
+  /// memories, tasks and conversations to a cloud model, so it does not run.
+  case connectorSynthesisDisabled
 
   init(_ error: Error) {
     if let mapped = error as? Self {
@@ -67,6 +70,8 @@ enum AIUserProfileRefreshError: LocalizedError, Equatable {
       return "Too many requests. Try again in a few minutes."
     case .unavailable:
       return "Couldn't reach Omi to generate your profile. Check your connection and try again."
+    case .connectorSynthesisDisabled:
+      return "Profile generation is off while the Local AI provider is active and Cloud-assisted features are off."
     }
   }
 }
@@ -258,6 +263,10 @@ actor AIUserProfileService {
   /// Regenerate on the backend now. Throws `AIUserProfileRefreshError`.
   func refresh() async throws -> AIUserProfile? {
     guard !isRefreshing else { throw AIUserProfileRefreshError.alreadyRefreshing }
+    guard !AIProvider.shouldSkipConnectorSynthesis() else {
+      log("AIUserProfileService: Skipping profile synthesis: Local provider, Cloud-assisted features Off")
+      throw AIUserProfileRefreshError.connectorSynthesisDisabled
+    }
     isRefreshing = true
     defer { isRefreshing = false }
     let epoch = ownerEpoch
